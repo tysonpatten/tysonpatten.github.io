@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dynamic Calendar - 2025</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
     <style>
         @font-face {
             font-family: 'Century Gothic Black';
@@ -19,33 +21,33 @@
         }
 
         .month-number {
-        font-family: 'Century Gothic Black', sans-serif;
-        font-weight: 900;
-        font-size: 4.5rem; /* Reduced from 6rem to 4.5rem */
-        line-height: 1;
-        text-align: center;
-        color: #f4f4f4;
-        background-color: transparent; /* Transparent background */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 2px solid #313131; /* Optional border */
-        flex-direction: column; /* Stack number and subheading */
-    }
+            font-family: 'Century Gothic Black', sans-serif;
+            font-weight: 900;
+            font-size: 4.5rem;
+            line-height: 1;
+            text-align: center;
+            color: #f4f4f4;
+            background-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #313131;
+            flex-direction: column;
+        }
 
-    .month-subheading {
-        font-family: 'Century Gothic Black', sans-serif;
-        font-weight: 900;
-        font-size: 1.5rem; /* Subheading remains the same */
-        line-height: 1;
-        color: #a6a6a6; /* Slightly lighter color */
-        text-align: center;
-        margin-top: 8px; /* Space between number and subheading */
-    }
+        .month-subheading {
+            font-family: 'Century Gothic Black', sans-serif;
+            font-weight: 900;
+            font-size: 1.5rem;
+            line-height: 1;
+            color: #a6a6a6;
+            text-align: center;
+            margin-top: 8px;
+        }
 
         .date-card {
-            height: 120px; /* 1.2 times the width */
-            width: 100px;  /* Fixed width for consistent shape */
+            height: 120px;
+            width: 100px;
         }
 
         .dates-container {
@@ -57,120 +59,126 @@
         body {
             margin: 0;
         }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #calendar-events {
+            margin-top: 20px;
+        }
+
+        .event {
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #717171;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body class="bg-[#1f1f1f] text-[#f4f4f4] font-sans">
     <h1 class="text-center text-xl mb-6">Dynamic Calendar - 2025</h1>
+    <button onclick="handleAuthClick()">Authorize Google Calendar</button>
     <div id="calendar-container" class="space-y-8"></div>
+    <div id="calendar-events"></div>
 
     <script>
-        const months = [
-            { number: '01', name: 'JANUARY', days: 31 }, // January
-            { number: '02', name: 'FEBRUARY', days: 28 }, // February
-            { number: '03', name: 'MARCH', days: 31 }, // March
-            { number: '04', name: 'APRIL', days: 30 }, // April
-            { number: '05', name: 'MAY', days: 31 }, // May
-            { number: '06', name: 'JUNE', days: 30 }, // June
-            { number: '07', name: 'JULY', days: 31 }, // July
-            { number: '08', name: 'AUGUST', days: 31 }, // August
-            { number: '09', name: 'SEPTEMBER', days: 30 }, // September
-            { number: '10', name: 'OCTOBER', days: 31 }, // October
-            { number: '11', name: 'NOVEMBER', days: 30 }, // November
-            { number: '12', name: 'DECEMBER', days: 31 }, // December
-        ];
+        const CLIENT_ID = '203939004278-javc3f5gmbpldbtboidlu9np5jud8qcj.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyASPpyJcR8FRhAZmCQEHFegGZXWYekIi1o';
+        const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
+        const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
-        const year = 2025; // Specify the year
-        const calendarContainer = document.getElementById('calendar-container');
-        const MAX_CALENDAR_ROWS = 5; // Limit to 5 rows for the calendar container
-        const MAX_MONTH_NUMBER_ROWS = 3; // Limit to 3 rows for the month number container
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
 
-        function calculateRows(cardsPerRow, days) {
-            return Math.ceil(days / cardsPerRow);
+        // Load Google API
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
         }
 
-        function updateAllMonthSizes() {
-            const allDatesContainers = Array.from(document.querySelectorAll('.dates-container'));
-            const maxWidth = Math.max(...allDatesContainers.map((c) => c.scrollWidth));
-            const cardsPerRow = Math.floor(maxWidth / 100); // Cards that fit in one row
-            const rowsForLongestMonth = calculateRows(cardsPerRow, 31); // Rows based on the longest month
-            const calendarHeight = Math.min(rowsForLongestMonth, MAX_CALENDAR_ROWS) * 120; // Limit to MAX_CALENDAR_ROWS
-            const monthNumberHeight = Math.min(rowsForLongestMonth, MAX_MONTH_NUMBER_ROWS) * 120; // Limit to MAX_MONTH_NUMBER_ROWS
-
-            // Apply calendarHeight to datesContainer and monthNumberHeight to monthNumber
-            document.querySelectorAll('.month-number').forEach((monthNumber) => {
-                monthNumber.style.height = `${monthNumberHeight}px`;
-                monthNumber.style.width = `${monthNumberHeight}px`; // Keep square
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                apiKey: API_KEY,
+                discoveryDocs: [DISCOVERY_DOC],
             });
-
-            allDatesContainers.forEach((datesContainer) => {
-                // Calculate rows for this month
-                const totalDays = datesContainer.childElementCount;
-                const rowsForThisMonth = calculateRows(cardsPerRow, totalDays);
-                const heightForThisMonth = Math.min(rowsForThisMonth, MAX_CALENDAR_ROWS) * 120;
-
-                // Apply the calculated height
-                datesContainer.style.height = `${heightForThisMonth}px`;
-                datesContainer.style.width = `${maxWidth}px`; // Uniform width for all months
-            });
+            gapiInited = true;
         }
 
-        function generateMonth(month) {
-            // Create a container for the month
-            const monthContainer = document.createElement('div');
-            monthContainer.className = 'flex bg-[#313131] rounded-lg p-4 mx-4';
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // Set later on button click
+            });
+            gisInited = true;
+        }
 
-            // Create the Month Number block with subheading
-            const monthNumber = document.createElement('div');
-            monthNumber.className = 'month-number';
-            monthNumber.innerHTML = `
-                <div>${month.number}</div>
-                <div class="month-subheading">${month.name}</div>
-            `;
+        function handleAuthClick() {
+            tokenClient.callback = async (response) => {
+                if (response.error) {
+                    console.error('Error during authorization:', response.error);
+                    return;
+                }
+                listUpcomingEvents();
+            };
 
-            // Create a container for the date blocks
-            const datesContainer = document.createElement('div');
-            datesContainer.className = 'dates-container';
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClient.requestAccessToken({ prompt: '' });
+            }
+        }
 
-            // Generate days for the month
-            for (let day = 1; day <= month.days; day++) {
-                const date = new Date(year, parseInt(month.number) - 1, day);
-                const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-                // Add Day Card
-                datesContainer.innerHTML += `
-                    <div class="date-card flex flex-col bg-[#1f1f1f] border border-[#313131]">
-                        <div class="flex items-center justify-between ${
-                            isWeekend ? 'bg-[#313131]' : 'bg-[#717171]'
-                        } text-[#f4f4f4] px-2 py-1">
-                            <span class="flex-1 text-center text-xs text-[#a6a6a6]">${
-                                ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][dayOfWeek]
-                            }</span>
-                            <span class="text-xs font-bold">${day}</span>
-                        </div>
-                        <div class="flex-grow ${
-                            isWeekend ? 'bg-[#575757]' : 'bg-[#1f1f1f]'
-                        }"></div>
-                    </div>
-                `;
+        async function listUpcomingEvents() {
+            let response;
+            try {
+                response = await gapi.client.calendar.events.list({
+                    calendarId: 'primary',
+                    timeMin: new Date().toISOString(),
+                    showDeleted: false,
+                    singleEvents: true,
+                    maxResults: 10,
+                    orderBy: 'startTime',
+                });
+            } catch (err) {
+                console.error('Error fetching calendar events:', err.message);
+                return;
             }
 
-            // Append the date container and the month number
-            monthContainer.appendChild(monthNumber);
-            monthContainer.appendChild(datesContainer);
+            const events = response.result.items;
+            const eventsContainer = document.getElementById('calendar-events');
+            eventsContainer.innerHTML = '';
 
-            return monthContainer;
+            if (!events || events.length === 0) {
+                eventsContainer.innerHTML = '<p>No upcoming events found.</p>';
+                return;
+            }
+
+            events.forEach((event) => {
+                const eventElement = document.createElement('div');
+                eventElement.className = 'event';
+                const start = event.start.dateTime || event.start.date;
+                eventElement.textContent = `${start} - ${event.summary}`;
+                eventsContainer.appendChild(eventElement);
+            });
         }
 
-        // Generate each month dynamically
-        months.forEach((month) => {
-            const monthElement = generateMonth(month);
-            calendarContainer.appendChild(monthElement);
+        // Your existing calendar generation logic
+        // Initialize the calendar
+        document.addEventListener('DOMContentLoaded', () => {
+            gapiLoaded();
+            gisLoaded();
         });
-
-        // Update sizes after rendering and on resize
-        setTimeout(updateAllMonthSizes, 0); // Initial adjustment
-        window.addEventListener('resize', updateAllMonthSizes);
     </script>
 </body>
 </html>
